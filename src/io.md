@@ -17,14 +17,17 @@ for line in lines {
 ```
 to this:
 ```rust
+# fn blah() -> Result<(), std::io::Error> {
 # let lines = vec!["one", "two", "three"];
 use std::io::Write;
 let mut stdout = std::io::stdout();
 let mut lock = stdout.lock();
 for line in lines {
-    writeln!(lock, "{}", line);
+    writeln!(lock, "{}", line)?;
 }
 // stdout is unlocked when `lock` is dropped
+# Ok(())
+# }
 ```
 stdin and stderr can likewise be locked when doing repeated operations on them.
 
@@ -40,12 +43,15 @@ minimizing the number of system calls required.
 
 For example, change this unbuffered output code:
 ```rust
+# fn blah() -> Result<(), std::io::Error> {
 # let lines = vec!["one", "two", "three"];
 use std::io::Write;
 let mut out = std::fs::File::create("test.txt").unwrap();
 for line in lines {
-    writeln!(out, "{}", line);
+    writeln!(out, "{}", line)?;
 }
+# Ok(())
+# }
 ```
 to this:
 ```rust
@@ -55,7 +61,7 @@ use std::io::{BufWriter, Write};
 let mut out = std::fs::File::create("test.txt")?;
 let mut buf = BufWriter::new(out);
 for line in lines {
-    writeln!(buf, "{}", line);
+    writeln!(buf, "{}", line)?;
 }
 buf.flush()?;
 # Ok(())
@@ -70,3 +76,19 @@ that error explicit.
 
 Note that buffering also works with stdout, so you might want to combine manual
 locking *and* buffering when making many writes to stdout.
+
+## Reading Input as Raw Bytes
+
+The built-in [String] type uses UTF-8 internally, which adds a small, but
+nonzero overhead caused by UTF-8 validation when you read input into it. If you
+just want to process input bytes without worrying about UTF-8 (for example if
+you handle ASCII text), you can use [`BufRead::read_until`].
+
+[String]: https://doc.rust-lang.org/std/string/struct.String.html
+[`BufRead::read_until`]: https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until
+
+There are also dedicated crates for reading [byte-oriented lines of data]
+and working with [byte strings].
+
+[byte-oriented lines of data]: https://github.com/Freaky/rust-linereader
+[byte strings]: https://github.com/BurntSushi/bstr

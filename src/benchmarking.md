@@ -7,18 +7,23 @@ this book, but here are the basics.
 
 First, you need workloads to measure. Ideally, you would have a variety of
 workloads that represent realistic usage of your program. Workloads using
-real-world inputs are best, but
-[microbenchmarks](https://stackoverflow.com/questions/2842695/what-is-microbenchmarking)
-and [stress tests](https://en.wikipedia.org/wiki/Stress_testing_(software)) can
-be useful in moderation.
+real-world inputs are best, but [microbenchmarks] and [stress tests] can be
+useful in moderation.
+
+[microbenchmarks]: https://stackoverflow.com/questions/2842695/what-is-microbenchmarking
+[stress tests]: https://en.wikipedia.org/wiki/Stress_testing_(software)
 
 Second, you need a way to run the workloads, which will also dictate the
-metrics used. Rust's built-in [benchmark
-tests](https://doc.rust-lang.org/1.7.0/book/benchmark-tests.html) are a simple
-starting point. [Criterion](https://github.com/bheisler/criterion.rs) is a more
-sophisticated alternative. Custom benchmarking harnesses are also possible.
-For example, [rustc-perf](https://github.com/rust-lang/rustc-perf/) is the
-harness used to benchmark the Rust compiler.
+metrics used. Rust's built-in [benchmark tests] are a simple starting point,
+but they use unstable features and only work on Nightly Rust. The [`bencher`]
+crate is similar but works with stable Rust. [Criterion] is a more
+sophisticated alternative. Custom benchmarking harnesses are also possible. For
+example, [rustc-perf] is the harness used to benchmark the Rust compiler.
+
+[benchmark tests]: https://doc.rust-lang.org/1.16.0/book/benchmark-tests.html
+[`bencher`]: https://crates.io/crates/bencher
+[Criterion]: https://github.com/bheisler/criterion.rs
+[rustc-perf]: https://github.com/rust-lang/rustc-perf/
 
 When it comes to metrics, there are many choices, and the right one(s) will
 depend on the nature of the program being benchmarked. For example, metrics

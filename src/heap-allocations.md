@@ -1,6 +1,6 @@
 # Heap Allocations
 
-Heap allocations are moderately expensive. The exact details depend on
+Heap allocations are moderately expensive. The exact details depend on which
 allocator is in use, but each allocation (and deallocation) typically involves
 acquiring a global lock, doing some non-trivial data structure manipulation,
 and possibly executing a system call. Small allocations are not necessarily
@@ -16,13 +16,14 @@ is an excellent companion to the following sections.
 ## Profiling
 
 If a general-purpose profiler shows `malloc`, `free`, and related functions as
-hot, then it is likely worth trying to reduce the allocation rate.
+hot, then it is likely worth trying to reduce the allocation rate and/or using
+an alternative allocator.
 
-[DHAT] is an excellent profiler to use when reducing allocation rates. It
-precisely identifies hot allocation sites and their allocation rates. Exact
-results will vary, but experience with rustc has shown that reducing allocation
-rates by 10 allocations per million instructions executed can have measurable
-performance improvements (e.g. ~1%).
+[DHAT] is an excellent profiler to use when reducing allocation rates. It works
+on Linux and some other Unixes. It precisely identifies hot allocation
+sites and their allocation rates. Exact results will vary, but experience with
+rustc has shown that reducing allocation rates by 10 allocations per million
+instructions executed can have measurable performance improvements (e.g. ~1%).
 
 [DHAT]: https://www.valgrind.org/docs/manual/dh-manual.html
 
@@ -53,8 +54,8 @@ for, and how often they are accessed.
 
 ## `Box`
 
-[`Box`] is the simplest heap-allocated type. A `Box<T>` value is a `T` value that
-is allocated on the heap. 
+[`Box`] is the simplest heap-allocated type. A `Box<T>` value is a `T` value
+that is allocated on the heap. 
 
 [`Box`]: https://doc.rust-lang.org/std/boxed/struct.Box.html
 
@@ -68,14 +69,14 @@ optimizations.
 ## `Rc`/`Arc`
 
 [`Rc`]/[`Arc`] are similar to `Box`, but the value on the heap is accompanied by
-two reference counts. They allows value sharing, which can be an effective way
+two reference counts. They allow value sharing, which can be an effective way
 to reduce memory usage.
 
 [`Rc`]: https://doc.rust-lang.org/std/rc/struct.Rc.html
 [`Arc`]: https://doc.rust-lang.org/std/sync/struct.Arc.html
 
 However, if used for values that are rarely shared, they can increase allocation
-rates by heap allocating values that might otherwise not be heap allocated.
+rates by heap allocating values that might otherwise not be heap-allocated.
 [**Example**](https://github.com/rust-lang/rust/pull/37373/commits/c440a7ae654fb641e68a9ee53b03bf3f7133c2fe).
 
 Unlike `Box`, calling `clone` on an `Rc`/`Arc` value does not involve an
@@ -89,15 +90,19 @@ requires understanding how its elements are stored.
 
 [`Vec`]: https://doc.rust-lang.org/std/vec/struct.Vec.html
 
-A `Vec` contains three words: a length, a capacity, and a (possibly null)
-pointer to some number of heap-allocated elements. Even if the `Vec` itself is
-not heap-allocated, the elements (if present) always will be. If elements are
-present, the memory holding those elements may be larger than necessary,
-providing space for additional future elements. The number of elements present
-is the length, and the number of elements that could be held without
-reallocating is the capacity. When the vector needs to grow beyond its current
-capacity, the elements will be copied into a larger heap allocation, and the
-old heap allocation will be freed.
+A `Vec` contains three words: a length, a capacity, and a pointer. The pointer
+will point to heap-allocated memory if the capacity is nonzero and the element
+size is nonzero; otherwise, it will not point to allocated memory.
+
+Even if the `Vec` itself is not heap-allocated, the elements (if present and
+nonzero-sized) always will be. If nonzero-sized elements are present, the
+memory holding those elements may be larger than necessary, providing space for
+additional future elements. The number of elements present is the length, and
+the number of elements that could be held without reallocating is the capacity.
+
+When the vector needs to grow beyond its current capacity, the elements will be
+copied into a larger heap allocation, and the old heap allocation will be
+freed.
 
 ### `Vec` growth
 
@@ -151,20 +156,23 @@ heap-allocated or not. Also, If `N` is high or `T` is large, then the
 confirm that an optimization is effective.
 
 If you have many short vectors *and* you precisely know their maximum length,
-`ArrayVec` from the [`arrayvec`](https://crates.io/crates/arrayvec) crate is a
-better choice than `SmallVec`. It does not require the fallback to heap
-allocation, which makes it a little faster.
+`ArrayVec` from the [`arrayvec`] crate is a better choice than `SmallVec`. It
+does not require the fallback to heap allocation, which makes it a little
+faster.
 [**Example**](https://github.com/rust-lang/rust/pull/74310/commits/c492ca40a288d8a85353ba112c4d38fe87ef453e).
+
+[`arrayvec`]: https://crates.io/crates/arrayvec
 
 ### Longer `Vec`s
 
-If you know the (definite or likely) minimum size of a vector, you can reserve
-the capacity with [`Vec::with_capacity`], [`Vec::reserve`], or
+If you know the minimum or exact size of a vector, you can reserve a specific
+capacity with [`Vec::with_capacity`], [`Vec::reserve`], or
 [`Vec::reserve_exact`]. For example, if you know a vector will grow to have at
 least 20 elements, these functions can immediately provide a vector with a
 capacity of at least 20 using a single allocation, whereas pushing the items
 one at a time would result in four allocations (for capacities of 4, 8, 16, and
 32).
+[**Example**](https://github.com/rust-lang/rust/pull/77990/commits/a7f2bb634308a5f05f2af716482b67ba43701681).
 
 [`Vec::with_capacity`]: https://doc.rust-lang.org/std/vec/struct.Vec.html#method.with_capacity
 [`Vec::reserve`]: https://doc.rust-lang.org/std/vec/struct.Vec.html#method.reserve
@@ -191,6 +199,14 @@ type.
 
 [`smallstr`]: https://crates.io/crates/smallstr
 
+The `String` type from the [`smartstring`] crate is a drop-in replacement for
+`String` that avoids heap allocations for strings with less than three words'
+worth of characters. On 64-bit platforms, this is any string that is less than
+24 bytes, which includes all strings containing 23 or fewer ASCII characters.
+[**Example**](https://github.com/djc/topfew-rs/commit/803fd566e9b889b7ba452a2a294a3e4df76e6c4c).
+
+[`smartstring`]: https://crates.io/crates/smartstring
+
 Note that the `format!` macro produces a `String`, which means it performs an
 allocation. If you can avoid a `format!` call by using a string literal, that
 will avoid this allocation.
@@ -207,7 +223,6 @@ growth and capacity have equivalents for `HashSet`/`HashMap`, such as
 
 [`HashSet`]: https://doc.rust-lang.org/std/collections/struct.HashSet.html
 [`HashMap`]: https://doc.rust-lang.org/std/collections/struct.HashMap.html
-
 [`HashSet::with_capacity`]: https://doc.rust-lang.org/std/collections/struct.HashSet.html#method.with_capacity
 
 ## `Cow`
@@ -236,7 +251,7 @@ necessary.
 
 ## `clone`
 
-Calling [`clone`] on a value that contains heap allocated memory typically
+Calling [`clone`] on a value that contains heap-allocated memory typically
 involves additional allocations. For example, calling `clone` on a non-empty
 `Vec` requires a new allocation for the elements (but note that the capacity of
 the new `Vec` might not be the same as the capacity of the original `Vec`). The
@@ -306,12 +321,40 @@ fn do_stuff(x: u32, y: u32, vec: &mut Vec<u32>) {
 Sometimes it is worth keeping around a "workhorse" collection that can be
 reused. For example, if a `Vec` is needed for each iteration of a loop, you
 could declare the `Vec` outside the loop, use it within the loop body, and then
-call [`clear`] at the end of the loop body (to empty the loop without affecting
+call [`clear`] at the end of the loop body (to empty the `Vec` without affecting
 its capacity). This avoids allocations at the cost of obscuring the fact that
 each iteration's usage of the `Vec` is unrelated to the others.
-[**Example**](https://github.com/rust-lang/rust/pull/51870/commits/b0c78120e3ecae5f4043781f7a3f79e2277293e7).
+[**Example 1**](https://github.com/rust-lang/rust/pull/77990/commits/45faeb43aecdc98c9e3f2b24edf2ecc71f39d323),
+[**Example 2**](https://github.com/rust-lang/rust/pull/51870/commits/b0c78120e3ecae5f4043781f7a3f79e2277293e7).
 
 [`clear`]: https://doc.rust-lang.org/std/vec/struct.Vec.html#method.clear
 
 Similarly, it is sometimes worth keeping a "workhorse" collection within a
 struct, to be reused in one or more methods that are called repeatedly.
+
+## Using an Alternative Allocator
+
+Another option for improving the performance of allocation-heavy Rust programs
+is to replace the default (system) allocator with an alternative allocator. The
+exact effect will depend on the individual program and the alternative
+allocator chosen. It will also vary across platforms, because each platform's
+system allocator has its own strengths and weaknesses. The use of an
+alternative allocator can also affect binary size.
+
+One popular alternative allocator is [jemalloc], usable via the
+[`jemallocator`] crate. To use it, add a dependency to your `Cargo.toml` file:
+```toml
+[dependencies]
+jemallocator = "0.3.2"
+```
+Then add the following somewhere in your Rust code:
+```rust,ignore
+#[global_allocator]
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+```
+Another alternative allocator is [mimalloc], usable via the [`mimalloc`] crate.
+
+[jemalloc]: https://github.com/jemalloc/jemalloc
+[`jemallocator`]: https://crates.io/crates/jemallocator
+[mimalloc]: https://github.com/microsoft/mimalloc
+[`mimalloc`]: https://docs.rs/mimalloc/0.1.22/mimalloc/
